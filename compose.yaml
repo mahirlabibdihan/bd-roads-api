@@ -1,0 +1,92 @@
+services:
+  # PostgreSQL/PostGIS + osm2pgsql + Redis + API + update worker, mirroring the single-container
+  # shape of bpo-postcode-osm.
+  road-network:
+    build: .
+    container_name: bangladesh-road-network
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_PGPASSFILE: /srv/road-network/.pgpass
+      ROADS_PGPASSFILE: /srv/road-network/import.pgpass
+      ROADS_HOME: /srv/road-network
+      OSM_PBF_DIR: /srv/osm-pbf
+      REDIS_URL: redis://127.0.0.1:6379/1
+      OSRM_BASE_URL: http://osrm:5000
+      # This container has no Docker socket, so it cannot rebuild the OSRM graph. The osrm-build
+      # service owns that; forcing it off here keeps the update worker from failing on it.
+      ROAD_INDEX_OSRM_REBUILD_ENABLED: "false"
+    ports:
+      - "${HOST_PORT:-5003}:${PORT:-5002}"
+    shm_size: 1gb
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - postgres-data:/var/lib/postgresql
+      - road-network-data:/srv/road-network
+      - osm-pbf:/srv/osm-pbf
+    healthcheck:
+      # /api/health answers 200 while OSRM is still missing (status "degraded"), which is what lets
+      # osrm-build wait on this service without the two deadlocking on each other.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT}/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60m
+
+  # One-shot. Compiles the routing graph, then exits; osrm waits for it to succeed.
+  osrm-build:
+    image: ghcr.io/project-osrm/osrm-backend:${OSRM_VERSION:-v5.27.1}
+    container_name: bangladesh-road-network-osrm-build
+    depends_on:
+      road-network:
+        condition: service_healthy
+    environment:
+      OSM_PBF_NAME: ${OSM_PBF_NAME:-bangladesh-latest.osm.pbf}
+      OSRM_PROFILE: ${OSRM_PROFILE:-foot}
+    volumes:
+      - osrm-data:/data
+      - osm-pbf:/pbf:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        set -e;
+        BASE="$${OSM_PBF_NAME%%.osm.pbf}";
+        if [ -f "/data/$${BASE}.osrm.mldgr" ]; then echo "OSRM graph already built; nothing to do."; exit 0; fi;
+        cp "/pbf/$${OSM_PBF_NAME}" /data/;
+        osrm-extract -p "/opt/$${OSRM_PROFILE}.lua" "/data/$${OSM_PBF_NAME}";
+        osrm-partition "/data/$${BASE}.osrm";
+        osrm-customize "/data/$${BASE}.osrm";
+        rm -f "/data/$${OSM_PBF_NAME}";
+        echo "OSRM graph built."
+    restart: "no"
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:${OSRM_VERSION:-v5.27.1}
+    container_name: bangladesh-road-network-osrm
+    depends_on:
+      osrm-build:
+        condition: service_completed_successfully
+    environment:
+      OSM_PBF_NAME: ${OSM_PBF_NAME:-bangladesh-latest.osm.pbf}
+    volumes:
+      - osrm-data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    # mld must match the partition/customize done above, and --max-matching-size raises OSRM's
+    # 100-coordinate default so a full boundary walk fits in one /match call.
+    command:
+      - >
+        exec osrm-routed --algorithm mld
+        --max-matching-size ${OSRM_MAX_MATCHING_SIZE:-1000}
+        "/data/$${OSM_PBF_NAME%%.osm.pbf}.osrm"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  road-network-data:
+  osm-pbf:
+  osrm-data:

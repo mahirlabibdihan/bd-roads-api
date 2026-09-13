@@ -1,0 +1,43 @@
+{
+  "name": "bangladesh-road-network-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bangladesh road network API for snapping postcode boundary points to roads",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "worker": "node workers/roadIndexUpdateWorker.js",
+    "test": "jest --runInBand",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "lint-staged": {
+    "*.{js,json,md}": "prettier --write"
+  },
+  "dependencies": {
+    "bullmq": "^5.58.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "ioredis": "^5.7.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "autocannon": "^8.0.0",
+    "husky": "^9.1.7",
+    "jest": "^30.1.3",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.6",
+    "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/tests"
+    ]
+  }
+}
