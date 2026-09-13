@@ -75,15 +75,34 @@ services:
       OSM_PBF_NAME: ${OSM_PBF_NAME:-bangladesh-latest.osm.pbf}
     volumes:
       - osrm-data:/data
+      - ./docker/osrm-probe.sh:/opt/bpo/osrm-probe.sh:ro
+      - ./docker/osrm-supervise.sh:/opt/bpo/osrm-supervise.sh:ro
     entrypoint: ["/bin/sh", "-c"]
     # mld must match the partition/customize done above, and --max-matching-size raises OSRM's
     # 100-coordinate default so a full boundary walk fits in one /match call.
     command:
       - >
-        exec osrm-routed --algorithm mld
-        --max-matching-size ${OSRM_MAX_MATCHING_SIZE:-1000}
+        exec bash /opt/bpo/osrm-supervise.sh --algorithm mld
+        --threads ${OSRM_THREADS:-2}
+        --max-matching-size ${OSRM_MATCH_MAX_POINTS:-100}
+        --max-matching-radius ${OSRM_MATCH_MAX_RADIUS_METERS:-50}
         "/data/$${OSM_PBF_NAME%%.osm.pbf}.osrm"
     restart: unless-stopped
+    init: true
+    cpus: "${OSRM_CPUS:-2.0}"
+    mem_limit: ${OSRM_MEMORY_LIMIT:-2g}
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "timeout", "3", "bash", "/opt/bpo/osrm-probe.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres-data:

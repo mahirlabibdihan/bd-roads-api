@@ -6,6 +6,10 @@ const numberFromEnv = (name, fallback) => {
 };
 
 const withoutTrailingSlash = (value) => value.replace(/\/+$/, "");
+const positiveInteger = (name, fallback) => {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+};
 const OSRM_BASE_URL = withoutTrailingSlash(process.env.OSRM_BASE_URL || "http://127.0.0.1:5010");
 const OSM_REPLICATION_URL = withoutTrailingSlash(
   process.env.OSM_REPLICATION_URL || "https://download.geofabrik.de/asia/bangladesh-updates",
@@ -32,6 +36,12 @@ module.exports = {
   OSRM_PROFILE: process.env.OSRM_PROFILE || "foot",
   OSRM_MAX_MATCHING_SIZE: numberFromEnv("OSRM_MAX_MATCHING_SIZE", 1000),
   OSRM_REQUEST_TIMEOUT_MS: numberFromEnv("OSRM_REQUEST_TIMEOUT_MS", 10000),
+  OSRM_MATCH_MAX_POINTS: positiveInteger("OSRM_MATCH_MAX_POINTS", 100),
+  OSRM_MATCH_MAX_RADIUS_METERS: positiveInteger("OSRM_MATCH_MAX_RADIUS_METERS", 50),
+  OSRM_MATCH_DEFAULT_RADIUS_METERS: positiveInteger("OSRM_MATCH_DEFAULT_RADIUS_METERS", 15),
+  OSRM_MATCH_CONCURRENCY: positiveInteger("OSRM_MATCH_CONCURRENCY", 2),
+  OSRM_FAILURE_COOLDOWN_MS: positiveInteger("OSRM_FAILURE_COOLDOWN_MS", 60000),
+  HEALTH_TIMEOUT_MS: positiveInteger("HEALTH_TIMEOUT_MS", 2000),
 
   DB_REQUEST_TIMEOUT_MS: numberFromEnv("DB_REQUEST_TIMEOUT_MS", 5000),
   GEOFABRIK_REQUEST_TIMEOUT_MS: numberFromEnv("GEOFABRIK_REQUEST_TIMEOUT_MS", 15000),

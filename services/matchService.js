@@ -3,9 +3,14 @@ const {
   OSRM_MAX_MATCHING_SIZE,
   OSRM_PROFILE,
   OSRM_REQUEST_TIMEOUT_MS,
-  SNAP_DEFAULT_RADIUS_METERS,
-  SNAP_MAX_RADIUS_METERS,
+  OSRM_MATCH_MAX_POINTS,
+  OSRM_MATCH_MAX_RADIUS_METERS,
+  OSRM_MATCH_DEFAULT_RADIUS_METERS,
+  OSRM_MATCH_CONCURRENCY,
+  OSRM_FAILURE_COOLDOWN_MS,
 } = require("../config/config");
+const { UpstreamGate } = require("../utils/upstreamGate");
+const gate = new UpstreamGate({ concurrency: OSRM_MATCH_CONCURRENCY, cooldownMs: OSRM_FAILURE_COOLDOWN_MS });
 const { clientError, parsePoints, parseRadius } = require("../utils/validation");
 
 // What this does that POST /api/snap/path does not: snapping treats every point independently, so
@@ -36,10 +41,11 @@ const upstreamError = (message, status, code) => {
 
 class MatchService {
   match = async ({ points, radius, timestamps, tidy }) => {
-    const { lons, lats } = parsePoints(points, OSRM_MAX_MATCHING_SIZE);
+    const { lons, lats } = parsePoints(points, Math.min(OSRM_MAX_MATCHING_SIZE, OSRM_MATCH_MAX_POINTS));
+    if (lons.length < 2) throw clientError("Map matching requires at least two points");
     const searchRadius = parseRadius(radius, {
-      fallback: SNAP_DEFAULT_RADIUS_METERS,
-      max: SNAP_MAX_RADIUS_METERS,
+      fallback: Math.min(OSRM_MATCH_DEFAULT_RADIUS_METERS, OSRM_MATCH_MAX_RADIUS_METERS),
+      max: OSRM_MATCH_MAX_RADIUS_METERS,
     });
 
     if (timestamps !== undefined) {
@@ -49,6 +55,9 @@ class MatchService {
       for (const [index, value] of timestamps.entries()) {
         if (!Number.isInteger(value) || value < 0) {
           throw clientError(`timestamps[${index}] must be a non-negative integer of UNIX seconds`);
+        }
+        if (index > 0 && value <= timestamps[index - 1]) {
+          throw clientError("timestamps must be strictly increasing");
         }
       }
     }
@@ -67,30 +76,34 @@ class MatchService {
     url.searchParams.set("radiuses", lons.map(() => searchRadius).join(";"));
     if (timestamps) url.searchParams.set("timestamps", timestamps.join(";"));
 
-    let response;
-    try {
-      response = await fetch(url, {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(OSRM_REQUEST_TIMEOUT_MS),
-      });
-    } catch (cause) {
-      const error = new Error("Map matching is temporarily unavailable", { cause });
-      error.status = 503;
-      error.expose = true;
-      throw error;
-    }
+    const body = await gate.run(async () => {
+      let response;
+      try {
+        response = await fetch(url, {
+          headers: { accept: "application/json" },
+          signal: AbortSignal.timeout(OSRM_REQUEST_TIMEOUT_MS),
+        });
+      } catch (cause) {
+        const error = new Error("Map matching is temporarily unavailable", { cause });
+        error.status = 503;
+        error.expose = true;
+        throw error;
+      }
 
-    let body;
-    try {
-      body = await response.json();
-    } catch (_cause) {
-      throw upstreamError(`OSRM returned an unreadable response (HTTP ${response.status})`, 502);
-    }
+      let body;
+      try {
+        body = await response.json();
+      } catch (_cause) {
+        throw upstreamError(`OSRM returned an unreadable response (HTTP ${response.status})`, 502);
+      }
 
-    if (body.code !== "Ok") {
-      const status = CODE_STATUS[body.code] || (response.ok ? 502 : 502);
-      throw upstreamError(body.message || `OSRM returned ${body.code}`, status, body.code);
-    }
+      if (body.code !== "Ok") {
+        const status = CODE_STATUS[body.code] || (response.ok ? 502 : 502);
+        throw upstreamError(body.message || `OSRM returned ${body.code}`, status, body.code);
+      }
+      if (!response.ok) throw upstreamError(`OSRM returned HTTP ${response.status}`, 502);
+      return body;
+    });
 
     const matchings = (body.matchings || []).map((matching) => ({
       confidence: matching.confidence,

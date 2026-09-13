@@ -1,4 +1,4 @@
-const matchService = require("../services/matchService");
+let matchService;
 
 const okResponse = (body) => ({ ok: true, status: 200, json: async () => body });
 
@@ -12,6 +12,8 @@ describe("matchService", () => {
   let originalFetch;
 
   beforeEach(() => {
+    jest.resetModules();
+    matchService = require("../services/matchService");
     originalFetch = global.fetch;
   });
   afterEach(() => {
@@ -105,5 +107,20 @@ describe("matchService", () => {
     await matchService.match({ points: TRACE, timestamps: [1700000000, 1700000005, 1700000010] });
     const url = new URL(global.fetch.mock.calls[0][0]);
     expect(url.searchParams.get("timestamps")).toBe("1700000000;1700000005;1700000010");
+  });
+
+  test("rejects expensive requests before contacting OSRM", async () => {
+    global.fetch = jest.fn();
+    await expect(matchService.match({ points: Array(101).fill(TRACE[0]) })).rejects.toMatchObject({ status: 400 });
+    await expect(matchService.match({ points: TRACE, radius: 150 })).rejects.toMatchObject({ status: 400 });
+    await expect(matchService.match({ points: TRACE, timestamps: [3, 2, 1] })).rejects.toMatchObject({ status: 400 });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("opens a cooldown after an upstream failure", async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error("timeout"));
+    await expect(matchService.match({ points: TRACE })).rejects.toMatchObject({ status: 503, retryAfter: 60 });
+    await expect(matchService.match({ points: TRACE })).rejects.toMatchObject({ status: 503, retryAfter: 60 });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -174,6 +174,34 @@ curl -sS -X POST "$API/api/admin/update" -H "Authorization: Bearer $ROAD_INDEX_A
 `POST /api/admin/update` queues a job only when Geofabrik is actually newer; otherwise it returns
 `{"status": "no_changes"}` without touching the queue.
 
+## OSRM overload protection
+
+Compose runs OSRM with two worker threads, a two-core CPU budget and a 2 GiB memory
+limit. A watchdog probes the local nearest-road endpoint after a 60-second startup
+grace period. Three consecutive failed probes (3-second deadline, 10-second interval)
+stop the routing process; Docker's `unless-stopped` policy then restarts the container.
+Graph data stays in the existing volume. OSRM logs rotate at 10 MiB, retaining three files.
+
+`POST /api/match` accepts at most 100 points and a radius up to 50 metres by default;
+its default radius is 15 metres. OSRM interprets radius as GPS uncertainty, so large
+values can make matching very expensive. Invalid or oversized requests return 400;
+they are never silently truncated. Longer recordings must be submitted as shorter
+segments. Deliberately drawn boundaries should use `/api/snap/path` instead.
+
+The API admits two concurrent matching requests per Node process with no waiting
+queue. Excess work returns 503 with `Retry-After`. An upstream failure opens a
+60-second cooldown because cancelling an HTTP request does not cancel OSRM's CPU
+work. Clients should honor `Retry-After` and avoid immediate automatic retries.
+If adding API replicas, budget their combined concurrency against the OSRM workers.
+
+`/api/health` uses a separate 2-second dependency deadline, returning `degraded`
+when matching is unavailable but roads still work. Database statements also have a
+server-side timeout. The matching controls are `OSRM_MATCH_MAX_POINTS`,
+`OSRM_MATCH_DEFAULT_RADIUS_METERS`, `OSRM_MATCH_MAX_RADIUS_METERS`,
+`OSRM_MATCH_CONCURRENCY`, and `OSRM_FAILURE_COOLDOWN_MS`; resource controls are
+`OSRM_THREADS`, `OSRM_CPUS`, and `OSRM_MEMORY_LIMIT`. Recreate the services after
+changing Compose limits. These watchdog/resource protections apply to Compose.
+
 ## Updates
 
 The PostGIS roads table updates incrementally from Geofabrik diffs via `osm2pgsql-replication`,

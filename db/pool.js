@@ -9,6 +9,7 @@ const pool = new Pool({
   ...connection,
   password: databasePassword,
   connectionTimeoutMillis: DB_REQUEST_TIMEOUT_MS,
+  statement_timeout: DB_REQUEST_TIMEOUT_MS,
   idleTimeoutMillis: 10000,
   max: 10,
 });

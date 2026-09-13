@@ -1,4 +1,4 @@
-const { OSRM_BASE_URL, OSRM_PROFILE, OSRM_REQUEST_TIMEOUT_MS } = require("../config/config");
+const { OSRM_BASE_URL, OSRM_PROFILE, HEALTH_TIMEOUT_MS } = require("../config/config");
 const { query } = require("../db/pool");
 const roadIndexUpdateService = require("./roadIndexUpdateService");
 
@@ -17,7 +17,7 @@ const osrmAvailable = async () => {
   try {
     const url = new URL(`/nearest/v1/${OSRM_PROFILE}/90.4125,23.8103`, OSRM_BASE_URL);
     url.searchParams.set("number", "1");
-    const response = await fetch(url, { signal: AbortSignal.timeout(OSRM_REQUEST_TIMEOUT_MS) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
     if (!response.ok) return false;
     return (await response.json()).code === "Ok";
   } catch (_error) {
@@ -25,11 +25,27 @@ const osrmAvailable = async () => {
   }
 };
 
+const bounded = async (operation) => {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve()
+        .then(operation)
+        .catch(() => false),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), HEALTH_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 exports.readiness = async () => {
   const [roads, osrm, updates] = await Promise.all([
-    roadsAvailable(),
-    osrmAvailable(),
-    roadIndexUpdateService.isAvailable(),
+    bounded(roadsAvailable),
+    bounded(osrmAvailable),
+    bounded(() => roadIndexUpdateService.isAvailable()),
   ]);
 
   // Losing OSRM costs map matching but leaves /api/roads and /api/snap fully working, so it is
