@@ -1,8 +1,8 @@
-const { DB_REQUEST_TIMEOUT_MS, GEOFABRIK_REPLICATION_STATE_URL } = require("../config/config");
+const { GEOFABRIK_REQUEST_TIMEOUT_MS, GEOFABRIK_REPLICATION_STATE_URL } = require("../config/config");
 const replicationState = require("../db/replicationState");
 
 const parseTimestamp = (value, source) => {
-  const date = value instanceof Date ? value : new Date(String(value).trim().replaceAll("\:", ":"));
+  const date = value instanceof Date ? value : new Date(String(value).trim().replaceAll("\\:", ":"));
   if (Number.isNaN(date.getTime())) throw new Error(`Invalid ${source} timestamp`);
   return date;
 };
@@ -21,7 +21,7 @@ const parseGeofabrikState = (text) => {
 const getRemoteState = async () => {
   const response = await fetch(GEOFABRIK_REPLICATION_STATE_URL, {
     headers: { accept: "text/plain" },
-    signal: AbortSignal.timeout(DB_REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(GEOFABRIK_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Geofabrik returned HTTP ${response.status}`);
   return parseGeofabrikState(await response.text());

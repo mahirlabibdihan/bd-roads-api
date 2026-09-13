@@ -3,7 +3,7 @@ services:
   # shape of bpo-postcode-osm.
   road-network:
     build: .
-    container_name: bangladesh-road-network
+    container_name: bd-road-network
     env_file:
       - .env
     environment:
@@ -41,7 +41,7 @@ services:
   # One-shot. Compiles the routing graph, then exits; osrm waits for it to succeed.
   osrm-build:
     image: ghcr.io/project-osrm/osrm-backend:${OSRM_VERSION:-v5.27.1}
-    container_name: bangladesh-road-network-osrm-build
+    container_name: bd-road-network-osrm-build
     depends_on:
       road-network:
         condition: service_healthy
@@ -67,7 +67,7 @@ services:
 
   osrm:
     image: ghcr.io/project-osrm/osrm-backend:${OSRM_VERSION:-v5.27.1}
-    container_name: bangladesh-road-network-osrm
+    container_name: bd-road-network-osrm
     depends_on:
       osrm-build:
         condition: service_completed_successfully

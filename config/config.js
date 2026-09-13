@@ -34,6 +34,7 @@ module.exports = {
   OSRM_REQUEST_TIMEOUT_MS: numberFromEnv("OSRM_REQUEST_TIMEOUT_MS", 10000),
 
   DB_REQUEST_TIMEOUT_MS: numberFromEnv("DB_REQUEST_TIMEOUT_MS", 5000),
+  GEOFABRIK_REQUEST_TIMEOUT_MS: numberFromEnv("GEOFABRIK_REQUEST_TIMEOUT_MS", 15000),
   DB_USER: process.env.DB_USER || "roads_api",
   DB_HOST: process.env.DB_HOST || "127.0.0.1",
   DB_PASS: process.env.DB_PASS || "",

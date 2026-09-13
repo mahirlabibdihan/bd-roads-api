@@ -12,7 +12,8 @@ RUN useradd --system --create-home --home-dir /srv/road-network --shell /bin/bas
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# Git hooks are development-only; keep dependency install scripts enabled.
+RUN npm pkg delete scripts.prepare && npm ci --omit=dev
 COPY . .
 RUN chmod +x docker/entrypoint.sh scripts/*.sh && mkdir -p /var/log/road-network
 EXPOSE 5002

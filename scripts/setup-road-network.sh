@@ -18,8 +18,13 @@ done
 
 [[ -r "$ENV_FILE" ]] || { echo "Missing configuration: $ENV_FILE" >&2; exit 1; }
 set -a
+# Preserve the shared-volume path supplied by Docker Compose.
+COMPOSE_OSM_PBF_DIR="${OSM_PBF_DIR:-}"
 # shellcheck source=/dev/null
 source "$ENV_FILE"
+if [[ -n "$COMPOSE_OSM_PBF_DIR" ]]; then
+  OSM_PBF_DIR="$COMPOSE_OSM_PBF_DIR"
+fi
 set +a
 
 : "${DB_HOST:=127.0.0.1}"
