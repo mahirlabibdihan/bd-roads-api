@@ -40,6 +40,9 @@ module.exports = {
   OSRM_MATCH_MAX_RADIUS_METERS: positiveInteger("OSRM_MATCH_MAX_RADIUS_METERS", 50),
   OSRM_MATCH_DEFAULT_RADIUS_METERS: positiveInteger("OSRM_MATCH_DEFAULT_RADIUS_METERS", 15),
   OSRM_MATCH_CONCURRENCY: positiveInteger("OSRM_MATCH_CONCURRENCY", 2),
+  // A /route call is one lightweight point-to-point query, not a multi-window trace match -- it can
+  // afford more headroom than OSRM_MATCH_CONCURRENCY without competing for the same budget.
+  OSRM_ROUTE_CONCURRENCY: positiveInteger("OSRM_ROUTE_CONCURRENCY", 4),
   OSRM_FAILURE_COOLDOWN_MS: positiveInteger("OSRM_FAILURE_COOLDOWN_MS", 60000),
   HEALTH_TIMEOUT_MS: positiveInteger("HEALTH_TIMEOUT_MS", 2000),
 
@@ -74,4 +77,5 @@ module.exports = {
   OSM_REPLICATION_URL,
   GEOFABRIK_REPLICATION_STATE_URL: `${OSM_REPLICATION_URL}/state.txt`,
   OSRM_MATCH_URL: `${OSRM_BASE_URL}/match/v1`,
+  OSRM_ROUTE_URL: `${OSRM_BASE_URL}/route/v1`,
 };

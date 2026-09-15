@@ -1,16 +1,17 @@
 // No queue: disconnected callers must not leave an unbounded backlog in OSRM.
 class UpstreamGate {
-  constructor({ concurrency, cooldownMs, now = Date.now }) {
+  constructor({ concurrency, cooldownMs, now = Date.now, label = "Map matching" }) {
     this.concurrency = concurrency;
     this.cooldownMs = cooldownMs;
     this.now = now;
+    this.label = label;
     this.active = 0;
     this.blockedUntil = 0;
   }
 
   async run(operation) {
     if (this.active >= this.concurrency || this.now() < this.blockedUntil) {
-      const error = new Error("Map matching is busy; retry later");
+      const error = new Error(`${this.label} is busy; retry later`);
       Object.assign(error, {
         status: 503,
         expose: true,
