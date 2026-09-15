@@ -124,3 +124,52 @@ describe("matchService", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("per-point search radii", () => {
+  let originalFetch;
+  // A fresh module per test: UpstreamGate is a module-level singleton, so the failure cooldown a
+  // previous test triggers would otherwise still be in force here and reject every call.
+  let service;
+  const okResponse = (body) => ({ ok: true, status: 200, json: async () => body });
+  const trace = [
+    [90.41, 23.81],
+    [90.411, 23.811],
+    [90.412, 23.812],
+  ];
+
+  beforeEach(() => {
+    jest.resetModules();
+    service = require("../services/matchService");
+    originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(okResponse({ code: "Ok", matchings: [], tracepoints: [] }));
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const radiusesSent = () => new URL(global.fetch.mock.calls[0][0]).searchParams.get("radiuses");
+
+  test("sends each point its own accuracy when the caller has it", async () => {
+    const result = await service.match({ points: trace, radiuses: [5, 30, 12] });
+    expect(radiusesSent()).toBe("5;30;12");
+    expect(result.perPointRadii).toBe(true);
+  });
+
+  test("clamps an implausibly poor fix instead of letting it drag the match", async () => {
+    // A device under heavy cover can report hundreds of metres; honouring that would let one bad
+    // reading pull the matched line across a whole district.
+    await service.match({ points: trace, radiuses: [5, 5000, 12] });
+    expect(radiusesSent()).toBe("5;50;12");
+  });
+
+  test("falls back per point for a missing or nonsensical accuracy", async () => {
+    await service.match({ points: trace, radius: 25, radiuses: [5, null, -3] });
+    expect(radiusesSent()).toBe("5;25;25");
+  });
+
+  test("falls back entirely when the array does not line up with the points", async () => {
+    const result = await service.match({ points: trace, radius: 25, radiuses: [5, 30] });
+    expect(radiusesSent()).toBe("25;25;25");
+    expect(result.perPointRadii).toBe(false);
+  });
+});

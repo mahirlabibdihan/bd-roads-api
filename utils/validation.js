@@ -98,7 +98,25 @@ const parsePoints = (value, maxPoints) => {
   return { lons, lats };
 };
 
+// One search radius per point, which is what OSRM's `radiuses` expects: the accuracy of that
+// individual fix. Anything missing or nonsensical for a given point falls back to the single
+// radius rather than failing the whole trace -- a device does not always report accuracy, and one
+// gap should not cost the caller the match.
+const parseRadiuses = (value, pointCount, fallback, max) => {
+  if (!Array.isArray(value) || value.length !== pointCount) {
+    return new Array(pointCount).fill(fallback);
+  }
+  return value.map((entry) => {
+    const radius = Number(entry);
+    if (!Number.isFinite(radius) || radius <= 0) return fallback;
+    // Clamped rather than rejected: a genuinely poor fix can report an accuracy of hundreds of
+    // metres, and honouring that would let one bad reading drag the match across a whole district.
+    return Math.min(radius, max);
+  });
+};
+
 module.exports = {
+  parseRadiuses,
   BANGLADESH_BBOX,
   clientError,
   parseBbox,

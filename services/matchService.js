@@ -11,7 +11,7 @@ const {
 } = require("../config/config");
 const { UpstreamGate } = require("../utils/upstreamGate");
 const gate = new UpstreamGate({ concurrency: OSRM_MATCH_CONCURRENCY, cooldownMs: OSRM_FAILURE_COOLDOWN_MS });
-const { clientError, parsePoints, parseRadius } = require("../utils/validation");
+const { clientError, parsePoints, parseRadius, parseRadiuses } = require("../utils/validation");
 
 // What this does that POST /api/snap/path does not: snapping treats every point independently, so
 // where two ways run close together -- a road and its service lane, the two banks of a canal --
@@ -40,7 +40,7 @@ const upstreamError = (message, status, code) => {
 };
 
 class MatchService {
-  match = async ({ points, radius, timestamps, tidy }) => {
+  match = async ({ points, radius, radiuses, timestamps, tidy }) => {
     const { lons, lats } = parsePoints(points, Math.min(OSRM_MAX_MATCHING_SIZE, OSRM_MATCH_MAX_POINTS));
     if (lons.length < 2) throw clientError("Map matching requires at least two points");
     const searchRadius = parseRadius(radius, {
@@ -73,7 +73,12 @@ class MatchService {
     // tidy drops near-duplicate fixes -- standing still for a minute otherwise contributes dozens
     // of points that pull the match toward whatever is nearest that one spot.
     url.searchParams.set("tidy", tidy === false ? "false" : "true");
-    url.searchParams.set("radiuses", lons.map(() => searchRadius).join(";"));
+    // OSRM takes one search radius per coordinate, and that is meant to be the GPS accuracy of
+    // that particular fix. A caller that recorded accuracy per point sends it here; without it
+    // every point shares one radius, which is too tight for readings taken between buildings and
+    // too loose for clean ones under open sky.
+    const perPointRadii = parseRadiuses(radiuses, lons.length, searchRadius, OSRM_MATCH_MAX_RADIUS_METERS);
+    url.searchParams.set("radiuses", perPointRadii.join(";"));
     if (timestamps) url.searchParams.set("timestamps", timestamps.join(";"));
 
     const body = await gate.run(async () => {
@@ -133,6 +138,8 @@ class MatchService {
       pointCount: tracepoints.length,
       unmatchedCount: tracepoints.filter((tracepoint) => tracepoint === null).length,
       radiusMeters: searchRadius,
+      // Whether the caller supplied real per-point accuracy or fell back to one radius throughout.
+      perPointRadii: Array.isArray(radiuses) && radiuses.length === lons.length,
       profile: OSRM_PROFILE,
     };
   };
